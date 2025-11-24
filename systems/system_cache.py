@@ -15,7 +15,8 @@ There are 3 kinds of things in a cache with different levels of persistence:
 from syscore.fileutils import resolve_path_and_filename_for_package
 import pickle
 import bz2
-from functools import wraps
+from functools import wraps, partial
+import time
 
 """
 This is used for items which affect an entire system, not just one instrument
@@ -146,6 +147,10 @@ class systemCache(dict):
         super().__init__()
         self._parent = parent_system  # so we can access the instrument list
         self.set_caching_on()
+
+        # required to support my cache logging and initialised empty here ready for use
+        self.set_item_in_cache(dict(), "cum_cache_records")
+        # self.set_item_in_cache(dict(), "cache_usage_callers")
 
     @property
     def parent(self):
@@ -533,6 +538,7 @@ class systemCache(dict):
         not_pickable=False,
         instrument_classify=True,
         use_arg_names=True,
+        cache_record={},
         **kwargs,
     ):
         """
@@ -563,6 +569,8 @@ class systemCache(dict):
             value = func(this_stage, *args, **kwargs)
             return value
 
+        calc_or_cache = "cache"
+
         # Turn all the arguments into things we can use to identify the cache
         # element uniquely
         cache_ref = self.cache_ref(
@@ -583,6 +591,11 @@ class systemCache(dict):
             self.set_item_in_cache(
                 value, cache_ref, protected=protected, not_pickable=not_pickable
             )
+
+            calc_or_cache = "calc"
+            cache_record["size"] = len(pickle.dumps(value))
+
+        cache_record["c_or_c"] = calc_or_cache
 
         return value
 
@@ -706,16 +719,39 @@ def resolve_kwargs_to_str(kwargs, use_arg_names: bool = True):
     return ", ".join(long_flag_string)
 
 
-# null decorator doesn't do anything
-def null_decorator(func):
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
+# null decorator doesn't do anything - except log and time the call
+def null_decorator(decorator_used):
+    def decorate(func):
+        @wraps(func)
+        # note 'self' as always called from inside stage class
+        def wrapper(self, *args, **kwargs):
+            system = self.parent
+            this_stage = self
 
-    return wrapper
+            cache_record = create_cache_record(
+                system,
+                this_stage,
+                func,
+                decorator_used=decorator_used,
+            )
+
+            ans = func(self, *args, **kwargs)
+
+            close_cache_record(system, cache_record)
+
+            return ans
+
+        return wrapper
+
+    return decorate
 
 
-# generic decorator for caching
-def stage_access_cache_decorator(protected=False, not_pickable=False):
+# generic decorator for caching with logging
+def stage_access_cache_decorator(
+    decorator_used,
+    protected=False,
+    not_pickable=False,
+):
     """
 
     :param protected: is this protected from casual deletion?
@@ -732,6 +768,15 @@ def stage_access_cache_decorator(protected=False, not_pickable=False):
             system = self.parent
             this_stage = self
 
+            cache_record = create_cache_record(
+                system,
+                this_stage,
+                func,
+                decorator_used=decorator_used,
+                protected=protected,
+                not_pickable=not_pickable,
+            )
+
             ans = system.cache.calc_or_cache(
                 func,
                 this_stage,
@@ -739,8 +784,11 @@ def stage_access_cache_decorator(protected=False, not_pickable=False):
                 protected=protected,
                 not_pickable=not_pickable,
                 instrument_classify=True,
+                cache_record=cache_record,
                 **kwargs,
             )
+
+            close_cache_record(system, cache_record)
 
             return ans
 
@@ -785,8 +833,75 @@ def base_system_cache(protected=False, not_pickable=False):
     return decorate
 
 
+def create_cache_record(
+    system,
+    this_stage,
+    func,
+    decorator_used="not_set",
+    protected=False,
+    not_pickable=False,
+):
+
+    # local key for cached item that aggregates calls for a stage and function (method)
+    stage_func_key = ".".join([this_stage.name, func.__name__])
+
+    protected_str = ""
+    if protected:
+        protected_str = "protected"
+    not_pickable_str = ""
+    if not_pickable:
+        not_pickable_str = "not_pickable"
+
+    empty_cache_record = {
+        "stage_func_key": stage_func_key,
+        "decorator": decorator_used,
+        "protected": protected_str,
+        "not_pickable": not_pickable_str,
+        "calc_only": 0,
+        "calc": 0,
+        "cache": 0,
+        "calc_t": 0.0,
+        "c_or_c": "calc_only",  # set to "calc" or "cache" if output/diagnostic
+        "start": time.time(),  # used to calculate duration when closed
+        "size": 0,
+    }
+
+    cache_record = dict(empty_cache_record)
+
+    return cache_record
+
+
+def close_cache_record(system, cache_record):
+
+    stage_func_key = cache_record["stage_func_key"]
+
+    # save items to add to cumulative record
+    calc_or_cache = cache_record.pop("c_or_c")
+    duration = time.time() - float(cache_record.pop("start"))
+    size_if_added_to_cache = cache_record.pop("size")
+
+    # the cache element named "cum_cache_records" is a dict of dicts; each key
+    # is a stage_func_key composed of stage and function names, and the value is
+    # a dict which records the decorator_used, properties, call counts and durations
+    cum_cache_records = system.cache.get("cum_cache_records").value()
+
+    # retrieve cumulative record if it exists or use what we have
+    cum_cache_record = cum_cache_records.get(stage_func_key, cache_record)
+
+    cum_cache_record[calc_or_cache] = cum_cache_record[calc_or_cache] + 1
+    if calc_or_cache in ["calc_only", "calc"]:
+        cum_cache_record["calc_t"] = cum_cache_record["calc_t"] + duration
+    size_if_already_in_cache = cum_cache_record.get("size", 0)
+    cum_cache_record["size"] = size_if_already_in_cache + size_if_added_to_cache
+
+    cum_cache_records[stage_func_key] = cum_cache_record
+    system.cache.set_item_in_cache(cum_cache_records, "cum_cache_records")
+
+    return
+
+
 # actual decorators used, snappier names for 'stage wiring'
-input = null_decorator
-dont_cache = null_decorator
-diagnostic = stage_access_cache_decorator
-output = stage_access_cache_decorator
+input = null_decorator(decorator_used="input")
+dont_cache = null_decorator(decorator_used="dont_cache")
+diagnostic = partial(stage_access_cache_decorator, decorator_used="diagnostic")
+output = partial(stage_access_cache_decorator, decorator_used="output")
