@@ -1,4 +1,6 @@
 import os
+import platform
+
 from sysdata.config.production_config import get_production_config
 
 from sysproduction.data.directories import (
@@ -34,6 +36,12 @@ def dump_mongo_data(data: dataBlob):
     config = data.config
     host = config.get_element_or_arg_not_supplied("mongo_host")
     path = get_mongo_dump_directory()
+    # Mongodump manually installed to this location on Windows not part of standard install
+    if platform.system() == "Windows":
+        data.log.debug(f"Dumping ALL mongo data to {path}")	
+        os.system(f'"C://Program Files//MongoDB//mongodump.exe" -o={path}')
+        data.log.debug("Dumped")
+        return
     if host.startswith("mongodb"):
         source = "uri"
     else:
@@ -61,7 +69,11 @@ def backup_mongo_dump(data):
     destination_path = get_mongo_backup_directory()
     data.log.debug("Copy from %s to %s" % (source_path, destination_path))
     options = get_production_config().get_element("offsystem_backup_options")
+    if platform.system() == "Windows":
+        os.system(f"robocopy {source_path} {destination_path} /MIR")
+        return
     os.system(f"rsync {options} {source_path} {destination_path}")
+
 
 
 if __name__ == "__main__":

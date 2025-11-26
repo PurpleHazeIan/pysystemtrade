@@ -1,4 +1,5 @@
 import os
+import platform
 import pandas as pd
 
 from syscore.exceptions import missingData
@@ -60,7 +61,7 @@ class backupDbToCsv:
 
         log.debug("Dumping from db, mongo to .csv files")
         backup_adj_to_csv(backup_data)
-        backup_futures_contract_prices_to_csv(backup_data)
+        #backup_futures_contract_prices_to_csv(backup_data) #easy to recreate
         backup_spreads_to_csv(backup_data)
         backup_fx_to_csv(backup_data)
         backup_multiple_to_csv(backup_data)
@@ -486,6 +487,9 @@ def backup_csv_dump(data):
     destination_path = get_csv_backup_directory()
     data.log.debug("Copy from %s to %s" % (source_path, destination_path))
     options = get_production_config().get_element("offsystem_backup_options")
+    if platform.system() == "Windows":
+        os.system(f"robocopy {source_path} {destination_path} /MIR")
+        return
     os.system(f"rsync {options} {source_path} {destination_path}")
 
 
