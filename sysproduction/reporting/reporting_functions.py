@@ -11,7 +11,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from syscore.objects import resolve_function
 from syscore.constants import arg_not_supplied
 from syscore.fileutils import get_resolved_pathname
-from syscore.dateutils import datetime_to_long
+from syscore.dateutils import datetime_to_long, create_datetime_marker_string
 from syscore.interactive.display import (
     landing_strip_from_str,
     landing_strip,
@@ -277,6 +277,8 @@ def output_file_report(
 def resolve_report_filename(report_config, data: dataBlob):
     filename_with_spaces = report_config.title
     filename = filename_with_spaces.replace(" ", "_")
+    datetime_marker = create_datetime_marker_string()
+    filename = "%s_%s.txt" % (filename, datetime_marker)
     use_directory = get_directory_for_reporting(data)
     use_directory_resolved = get_resolved_pathname(use_directory)
     full_filename = os.path.join(use_directory_resolved, filename)
