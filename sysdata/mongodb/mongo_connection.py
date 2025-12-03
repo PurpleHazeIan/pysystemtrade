@@ -13,7 +13,7 @@ MONGO_INDEX_ID = "_id_"
 MONGO_ID_KEY = "_id"
 
 # regular expression pattern for mongodb connection URLs
-host_pattern = re.compile("^(mongodb://|mongodb\+srv://)([^:]+):([^@]+)@([^/]+)")
+host_pattern = re.compile("^(mongodb://)([^:]+):([^@]+)@([^/]+)")
 
 
 def mongo_defaults(**kwargs):
@@ -65,17 +65,7 @@ class MongoClientFactory(object):
         if key in self.mongo_clients:
             return self.mongo_clients.get(key)
         else:
-            if host.startswith("mongodb"):
-                # we are using uri format
-                try:
-                    from pymongo.server_api import ServerApi
-
-                    # we have pymongo 3.12 or higher
-                    client = MongoClient(host, server_api=ServerApi("1"))
-                except:
-                    client = MongoClient(host)
-            else:
-                client = MongoClient(host=host, port=port)
+            client = MongoClient(host=host, port=port)
             self.mongo_clients[key] = client
             return client
 
@@ -93,12 +83,12 @@ class mongoDb:
 
     def __init__(
         self,
-        mongo_db: str = arg_not_supplied,
+        mongo_database_name: str = arg_not_supplied,
         mongo_host: str = arg_not_supplied,
         mongo_port: int = arg_not_supplied,
     ):
         database_name, host, port = mongo_defaults(
-            mongo_db=mongo_db,
+            mongo_database_name=mongo_database_name,
             mongo_host=mongo_host,
             mongo_port=mongo_port,
         )
@@ -223,6 +213,9 @@ def mongo_clean_ints(dict_to_clean):
     for key_name in new_dict.keys():
         key_value = new_dict[key_name]
         if (isinstance(key_value, int)) or (isinstance(key_value, np.int64)):
+            key_value = float(key_value)
+
+        if (isinstance(key_value, np.float32)): #ICH
             key_value = float(key_value)
 
         new_dict[key_name] = key_value
