@@ -1,10 +1,15 @@
+"""
+Clean reporting directory as well as echo file directory.
+Drop renaming of echo files as it doesn't serve any useful purpose.
+
+"""
+
 from sysdata.data_blob import dataBlob
 from syscore.fileutils import (
     delete_old_files_with_extension_in_pathname,
-    rename_files_with_extension_in_pathname_as_archive_files,
 )
 
-from sysproduction.data.directories import get_echo_file_directory, get_echo_extension
+from sysproduction.data.directories import get_echo_file_directory
 
 
 def clean_truncate_echo_files():
@@ -20,14 +25,22 @@ class cleanTruncateEchoFiles:
 
     def clean_echo_files(self):
         pathname = get_echo_file_directory()
-        echo_extension = get_echo_extension()
-        self.data.log.debug("Archiving echo files")
-        rename_files_with_extension_in_pathname_as_archive_files(
-            pathname, extension=echo_extension, archive_extension=".arch"
+
+        days_old = 30
+        self.data.log.debug(
+            "Deleting files more than %s days old in %s" % (days_old, pathname)
         )
-        self.data.log.debug("Deleting old echo files")
         delete_old_files_with_extension_in_pathname(
-            pathname, extension=".arch", days_old=30
+            pathname, extension=".txt", days_old=days_old
+        )
+        # Repeat for report files
+        production_config = self.data.config
+        pathname = production_config.get_element("reporting_directory")
+        self.data.log.debug(
+            "Deleting files more than %s days old in %s" % (days_old, pathname)
+        )
+        delete_old_files_with_extension_in_pathname(
+            pathname, extension=".*", days_old=days_old
         )
 
 
