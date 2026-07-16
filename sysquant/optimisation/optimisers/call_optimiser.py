@@ -2,6 +2,7 @@ from sysquant.optimisation.optimisers.equal_weights import equal_weights_optimis
 from sysquant.optimisation.optimisers.shrinkage import shrinkage_optimisation
 from sysquant.optimisation.optimisers.handcraft import handcraft_optimisation
 from sysquant.optimisation.optimisers.one_period import one_period_optimisation
+from sysquant.optimisation.optimisers.hrp import hrp_optimisation
 
 from sysquant.optimisation.weights import (
     estimatesWithPortfolioWeights,
@@ -15,6 +16,7 @@ REGISTER_OF_OPTIMISERS = dict(
     shrinkage=shrinkage_optimisation,
     handcraft=handcraft_optimisation,
     one_period=one_period_optimisation,
+    hrp=hrp_optimisation,
 )
 
 
