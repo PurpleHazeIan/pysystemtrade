@@ -1,6 +1,7 @@
 import copy
 
 from sysbrokers.IB.ib_connection import connectionIB
+from sysbrokers.IG.ig_connection import connectionIG
 from syscore.objects import get_class_name
 from syscore.constants import arg_not_supplied
 from syscore.text import camel_case_split
@@ -19,6 +20,7 @@ class dataBlob(object):
         csv_data_paths: dict = arg_not_supplied,
         parquet_store_path: str = arg_not_supplied,
         ib_conn: connectionIB = arg_not_supplied,
+        ig_conn: connectionIG = arg_not_supplied,
         mongo_db: mongoDb = arg_not_supplied,
         log=arg_not_supplied,
         keep_original_prefix: bool = False,
@@ -57,6 +59,7 @@ class dataBlob(object):
 
         self._mongo_db = mongo_db
         self._ib_conn = ib_conn
+        self._ig_conn = ig_conn
         self._log = log
         self._log_name = log_name
         self._csv_data_paths = csv_data_paths
@@ -64,6 +67,9 @@ class dataBlob(object):
         self._parquet_store_path = parquet_store_path
 
         self._attr_list = []
+
+        # add some default csv data paths
+        self._add_default_csv_data_paths()
 
         if class_list is arg_not_supplied:
             # can set up dynamically later
@@ -99,6 +105,7 @@ class dataBlob(object):
         prefix = self._get_class_prefix(class_object)
         class_dict = dict(
             ib=self._add_ib_class,
+            ig=self._add_ig_class,
             csv=self._add_csv_class,
             arctic=self._add_arctic_class,
             mongo=self._add_mongo_class,
@@ -142,12 +149,9 @@ class dataBlob(object):
             resolved_instance = class_object(mongo_db=self.mongo_db, log=log)
         except Exception as e:
             class_name = get_class_name(class_object)
-            msg = (
-                "Error '%s' couldn't evaluate %s(mongo_db=self.mongo_db) \
+            msg = "Error '%s' couldn't evaluate %s(mongo_db=self.mongo_db) \
                         This might be because import is missing\
-                         or arguments don't follow pattern"
-                % (str(e), class_name)
-            )
+                         or arguments don't follow pattern" % (str(e), class_name)
             self._raise_and_log_error(msg)
 
         return resolved_instance
@@ -158,12 +162,9 @@ class dataBlob(object):
             resolved_instance = class_object(mongo_db=self.mongo_db, log=log)
         except Exception as e:
             class_name = get_class_name(class_object)
-            msg = (
-                "Error %s couldn't evaluate %s(mongo_db=self.mongo_db) \
+            msg = "Error %s couldn't evaluate %s(mongo_db=self.mongo_db) \
                         This might be because import is missing\
-                         or arguments don't follow pattern"
-                % (str(e), class_name)
-            )
+                         or arguments don't follow pattern" % (str(e), class_name)
             self._raise_and_log_error(msg)
 
         return resolved_instance
@@ -194,12 +195,9 @@ class dataBlob(object):
             resolved_instance = class_object(datapath=datapath, log=log)
         except Exception as e:
             class_name = get_class_name(class_object)
-            msg = (
-                "Error %s couldn't evaluate %s(datapath = datapath) \
+            msg = "Error %s couldn't evaluate %s(datapath = datapath) \
                         This might be because import is missing\
-                         or arguments don't follow pattern"
-                % (str(e), class_name)
-            )
+                         or arguments don't follow pattern" % (str(e), class_name)
             self._raise_and_log_error(msg)
 
         return resolved_instance
@@ -225,6 +223,54 @@ class dataBlob(object):
         csv_data_paths = getattr(self, "_csv_data_paths", arg_not_supplied)
 
         return csv_data_paths
+
+    def _add_default_csv_data_paths(self):
+
+        # Some csv data paths, particularly for csv configs, have defaults which are
+        # embedded in the actual csv data classes (pointing to data.futures). I ensure
+        # that these are always overridden here (keep data separate and private).
+        try:
+            csvconfig_root = self.config.get_element("csvconfig_root")
+        except:
+            self.log.warning(
+                "csvconfig_root is not set in config, will default to data.futures"
+            )
+            csvconfig_root = "data.futures"
+        try:
+            csvprices_root = self.config.get_element("csvprices_root")
+        except:
+            self.log.warning(
+                "csvprices_root is not set in config, will default to data.futures"
+            )
+            csvprices_root = "data.futures"
+        csv_data_paths_to_always_add = default_csv_data_paths(
+            csvconfig_root=csvconfig_root,
+            csvprices_root=csvprices_root,
+        )
+
+        # We need to respect any datapaths that were set in the calling parameter
+        # csv_data_paths, so we build a combined dict, noting that the value last
+        # added for a key is what wins out in a dict.
+        csv_data_paths_in_parameters = self.csv_data_paths
+        if csv_data_paths_in_parameters is arg_not_supplied:
+            csv_data_paths_in_parameters = {}
+        self._csv_data_paths = {
+            **csv_data_paths_to_always_add,
+            **csv_data_paths_in_parameters,
+        }
+
+    def _add_ig_class(self, class_object):
+        log = self._get_specific_logger(class_object)
+        try:
+            resolved_instance = class_object(self.ig_conn, self, log=log)
+        except Exception as e:
+            class_name = get_class_name(class_object)
+            msg = "Error %s couldn't evaluate %s(self.ig_conn, self) \
+                          This might be because IG website is down, import is missing\
+                          or arguments don't follow pattern" % (str(e), class_name)
+            self._raise_and_log_error(msg)
+
+        return resolved_instance
 
     def _get_specific_logger(self, class_object):
         class_name = get_class_name(class_object)
@@ -279,6 +325,9 @@ class dataBlob(object):
             self.ib_conn.close_connection()
             self.db_ib_broker_client_id.release_clientid(self.ib_conn.client_id())
 
+        if self._ig_conn is not arg_not_supplied:
+            self.ig_conn.close_connection()
+
         # No need to explicitly close Mongo connections; handled by Python garbage collection
 
     @property
@@ -316,6 +365,29 @@ class dataBlob(object):
         client_id = self.db_ib_broker_client_id.return_valid_client_id()
 
         return int(client_id)
+
+    @property
+    def ig_conn(self) -> connectionIG:
+        ig_conn = getattr(self, "_ig_conn", arg_not_supplied)
+        if ig_conn is arg_not_supplied:
+            ig_conn = self._get_new_ig_connection()
+            self._ig_conn = ig_conn
+
+        return ig_conn
+
+    def _get_new_ig_connection(self) -> connectionIG:
+        # Try this 5 times...
+        attempts = 0
+        while True:
+            try:
+                ig_conn = connectionIG(log=self.log)
+                return ig_conn
+
+            except Exception as e:
+                attempts += 1
+                if attempts > 5:
+                    msg = "Error %s couldn't get new broker connection" % str(e)
+                    self._raise_and_log_error(msg)
 
     @property
     def mongo_db(self) -> mongoDb:
@@ -378,7 +450,9 @@ class dataBlob(object):
         return log_name
 
 
-source_dict = dict(arctic="db", mongo="db", csv="db", parquet="db", ib="broker")
+source_dict = dict(
+    arctic="db", mongo="db", csv="db", parquet="db", ib="broker", ig="broker"
+)
 
 
 def identifying_name(
@@ -419,3 +493,18 @@ def identifying_name(
     lower_split_up_name = [source_label] + lower_split_up_name
 
     return "_".join(lower_split_up_name)
+
+
+def default_csv_data_paths(
+    csvconfig_root: str = "data.futures",
+    csvprices_root: str = "data.futures",
+) -> dict:
+    csv_data_paths = {
+        "csvFuturesAdjustedPricesData": f"{csvprices_root}.adjusted_prices_csv",
+        "csvFuturesMultiplePricesData": f"{csvprices_root}.multiple_prices_csv",
+        "csvFxPricesData": f"{csvprices_root}.fx_prices_csv",
+        "csvFuturesInstrumentData": f"{csvconfig_root}.csvconfig",
+        "csvRollParametersData": f"{csvconfig_root}.csvconfig",
+        "csvSpreadCostData": f"{csvconfig_root}.csvconfig",
+    }
+    return csv_data_paths
