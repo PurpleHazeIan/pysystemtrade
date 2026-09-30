@@ -53,7 +53,7 @@ class RawData(SystemStage):
             instrument_code=instrument_code, base_currency=base_currency
         )
 
-    @input
+    @output()  # changed - expensive on Windows, probably because of bdate indexing within
     def get_daily_prices(self, instrument_code) -> pd.Series:
         """
         Gets daily prices
@@ -79,7 +79,7 @@ class RawData(SystemStage):
 
         return dailyprice
 
-    @input
+    @output()  # changed - not used, potential callers all go direct to the data_stage
     def get_natural_frequency_prices(self, instrument_code: str) -> pd.Series:
         self.log.debug(
             "Retrieving natural prices for %s" % instrument_code,
@@ -95,7 +95,7 @@ class RawData(SystemStage):
 
         return natural_prices
 
-    @input
+    @output()  # changed - caution, not used/tested
     def get_hourly_prices(self, instrument_code: str) -> pd.Series:
         hourly_prices = self.data_stage.hourly_prices(instrument_code)
 
@@ -264,7 +264,7 @@ class RawData(SystemStage):
         """
         denom_price = self.daily_denominator_price(instrument_code)
         return_vol = self.daily_returns_volatility(instrument_code)
-        (denom_price, return_vol) = denom_price.align(return_vol, join="right")
+        denom_price, return_vol = denom_price.align(return_vol, join="right")
         perc_vol = 100.0 * (return_vol / denom_price.ffill().abs())
 
         return perc_vol
@@ -453,7 +453,7 @@ class RawData(SystemStage):
 
         return rolls_per_year
 
-    @input
+    @output()  # changed
     def get_instrument_raw_carry_data(self, instrument_code: str) -> rawCarryData:
         """
         Returns the 4 columns PRICE, CARRY, PRICE_CONTRACT, CARRY_CONTRACT
