@@ -1,0 +1,12 @@
+# default reflects that IG generally closes all markets between 22:00 and 23:00
+# EXAMPLE shows how to add something instrument specific with multiple windows per day
+default:
+  marketTimes:
+    - openTime: "23:01"
+      closeTime: "21:59"
+EXAMPLE:
+  marketTimes:
+    - openTime: "08:01"
+      closeTime: "08:59"
+    - openTime: "16:01"
+      closeTime: "16:59"
