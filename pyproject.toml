@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pysystemtrade"
-version = "1.8.2"
+version = "1.8.3"
 authors = [
   { name="Robert Carver", email="rob@systematicmoney.org" },
 ]
@@ -85,6 +85,7 @@ testpaths = [
     # "sysquant/estimators",
     "sysquant/optimisation",
     "sysquant/tests",
+    "sysbrokers/IB/tests",
     # "systems",
     # "systems/accounts",
     # "systems/provided",
